@@ -1,14 +1,18 @@
 const rpio = require('rpio');
-const SENDOR = 15;
+const SENSOR = 15;
 const printImage = require('./print-image');
+const verifyPlate = require('./verify-plate');
 
-rpio.open(SENDOR, rpio.INPUT, rpio.PULL_UP)
+rpio.open(SENSOR, rpio.INPUT, rpio.PULL_UP)
 
-setInterval(() => {
-    const value = rpio.read(SENDOR);
-    console.log('estado', value ? 'on' : 'off')
+module.exports = startRecognizer = (callback) => {
+    setInterval(() => {
+        const value = rpio.read(SENSOR);    
+        if (value) {
+            console.log('Sensor detected')
+            printImage();
+            verifyPlate();
+        }
+    }, 500)
 
-    if (value) {
-        printImage();
-    }
-}, 500)
+}
