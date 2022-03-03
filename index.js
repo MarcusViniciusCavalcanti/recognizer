@@ -1,9 +1,16 @@
 const express = require('express');
 const app = express();
-const startRecognizer = require('./sendor-detect');
 const http = require('http');
+const Gpio = require('onoff').Gpio;
+const rpio = require('rpio');
+const spawn = require('child_process').spawn;
 
+const SENSOR = 15;
+rpio.open(SENSOR, rpio.INPUT, rpio.PULL_UP);
+
+let CANCEL;
 let state = false;
+let openCancel = false;
 
 const callback = (resultPlates) => {
     if (!state) {
@@ -23,8 +30,10 @@ const callback = (resultPlates) => {
         .map(line => line.replace('confidence', ''))
         .reduce((acc, line, index) => {
             const plateAndConfidence = line.split(':');
+            const partOnePlate = plateAndConfidence[0].substring(0, 3);
+            const partTwoPlate = plateAndConfidence[0].substring(3);
             const plate =  {
-                plate: plateAndConfidence[0],
+                plate: `${partOnePlate}-${partTwoPlate}`,
                 confidence: plateAndConfidence[1]
             };
             acc[index] = plate;
@@ -33,29 +42,58 @@ const callback = (resultPlates) => {
 
         if (plates.length) {
             const recognizers = {
-                recognizers: plates
+                recognizers: plates.filter((rec) => rec.confidence >= 75.0)
             }
     
+            log(`encounter: ${recognizers.recognizers.length}`)
             sendRecognizer(recognizers);
+            setTimeout(() => state = false, 30000)
+        } else {
+            log('no plate encountered')
+            state = false;
         }
-        state = false;
     }
 };
 
 app.post('/open', (req, res) => {
-    console.log('receive message open');
+    openCancel = true;
+    CANCEL = new Gpio(12, 'out');
+    log('receive request to open cancel')
+    setTimeout(() => CANCEL.writeSync(1), 250);
+    setTimeout(() => openCancel = false, 30000);
     res.status(204).send();
 });
 
-const start = () => startRecognizer(callback);
+const start = async () => {
+    while(true) {
+        const value = rpio.read(SENSOR);
+        log(`check sensor: ${value}`)
+        if (value && !state && !openCancel) {
+            log('Sensor detected');
+            log('print image');
+            const argsPrintImage = ["-w", "640", "-h", "480", "-o", "./image.jpg"];
+            spawn('raspistill', argsPrintImage);
+
+            await sleep(6000);
+            log('exec process recognizer')
+            const argsExecAplr = ["-c", "br,eu", "./image.jpg"];
+            const result = spawn('alpr', argsExecAplr);
+            result.stdout.on('data', data => {
+                callback(data.toString())
+                log('complete recognizer')
+            });
+        }
+        await sleep(5000);
+    }
+};
 
 const sendRecognizer = (recognizers) => {
-    console.log('send recognizers', recognizers)
+    log(`send recognizers: ${recognizers}`)
     const postData = JSON.stringify(recognizers);
     const options = {
-        host: '192.168.1.16',
+        host: '161.35.230.173',
         port: 8080,
-        path: '/api/receive-recognizer/ZLYJvwSUNWwHQWQfYjZQfLjhr',
+        path: '/api/receive-recognizer/yAbWXiRzzknNSgHlnwLgLsOnl',
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -65,10 +103,11 @@ const sendRecognizer = (recognizers) => {
 
     const request = http.request(options, function(res) {
         res.setEncoding('utf8');
+        log('send request');
     });
 
     request.on('error', function(e) {
-        console.log('problem with request: ' + e.message);
+        log(`problem with request: ${e.message}`);
     });
 
     request.write(postData);
@@ -76,7 +115,15 @@ const sendRecognizer = (recognizers) => {
 };
 
 app.listen(9000, () => {
-    console.log('Server on');
+    log('Server on');
     start();
 });
 
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function log(message) {
+    console.log(`[INFO] - ${new Date().toISOString()} --> ${message}`)
+}
