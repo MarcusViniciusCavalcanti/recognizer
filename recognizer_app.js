@@ -88,12 +88,12 @@ const start = async () => {
 };
 
 const sendRecognizer = (recognizers) => {
-    log(`send recognizers: ${recognizers}`)
     const postData = JSON.stringify(recognizers);
+    log(`send recognizers: ${postData}`)
     const options = {
-        host: '161.35.230.173',
+        host: '192.168.1.10',
         port: 8080,
-        path: '/api/receive-recognizer/yAbWXiRzzknNSgHlnwLgLsOnl',
+        path: '/api/receive-recognizer/faaamNKWdbMpmaKGfamEmmMIC',
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
